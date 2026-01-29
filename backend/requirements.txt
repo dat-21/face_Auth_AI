@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+numpy
+motor
+python-multipart
+Pillow
+deepface
+tf-keras
+opencv-python

@@ -2,11 +2,12 @@ import axios from 'axios';
 
 const API_URL = 'http://localhost:8000';
 
-export const registerUser = async (userId: string, imageBase64: string) => {
+export const registerUser = async (userId: string, imageBase64: string, deviceInfo?: string) => {
     try {
         const response = await axios.post(`${API_URL}/register`, {
             user_id: userId,
-            image: imageBase64
+            image: imageBase64,
+            device_info: deviceInfo
         });
         return response.data;
     } catch (error: any) {

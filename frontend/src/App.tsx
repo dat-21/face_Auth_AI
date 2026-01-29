@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 import WebcamCapture from './components/WebcamCapture'
 import { registerUser, verifyUser } from './api'
@@ -9,6 +9,40 @@ function App() {
     const [capturedImage, setCapturedImage] = useState<string | null>(null);
     const [status, setStatus] = useState('');
     const [loading, setLoading] = useState(false);
+    const [deviceInfo, setDeviceInfo] = useState<string>('');
+
+    useEffect(() => {
+        const getDevices = async () => {
+            try {
+                // Request permission first or assume it's granted by Webcam component? 
+                // Enumerating without permission often gives empty labels.
+                // We'll rely on the user granting permission when the webcam starts.
+                // So maybe run this when capturing or just poll.
+                // Simple approach: Try to enumerate. If labels empty, maybe retry later?
+                // Actually, WebcamCapture loads immediately. 
+                // Let's just try to get it.
+
+                // Note: enumerateDevices() might return empty labels if permission not yet granted.
+                // Ideally we hook into when Webcam is ready, but WebcamCapture component doesn't expose that event up easily.
+                // We'll try to fetch it after a short delay or just call it.
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                if (videoDevices.length > 0) {
+                    // Just grab the first one or formatted list
+                    const labels = videoDevices.map(d => d.label || 'Unknown Camera').join(', ');
+                    setDeviceInfo(`${labels} | ${navigator.userAgent}`);
+                } else {
+                    setDeviceInfo(navigator.userAgent);
+                }
+            } catch (e) {
+                console.error("Error getting devices", e);
+                setDeviceInfo(navigator.userAgent);
+            }
+        };
+
+        // Call it.
+        getDevices();
+    }, []);
 
     const handleCapture = (image: string | null) => {
         setCapturedImage(image);
@@ -22,7 +56,7 @@ function App() {
         }
         setLoading(true);
         try {
-            const res = await registerUser(userId, capturedImage);
+            const res = await registerUser(userId, capturedImage, deviceInfo);
             setStatus(`Success: ${res.message}`);
         } catch (err: any) {
             setStatus(`Error: ${err.detail || err.message}`);

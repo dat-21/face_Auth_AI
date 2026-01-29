@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import db
 from models import RegisterRequest, LoginRequest, StandardResponse
-from utils import base64_to_cv2, get_face_embedding, is_match, calculate_distance
+from utils import base64_to_cv2, get_face_embedding, is_match, calculate_distance, find_best_match_in_db
 from datetime import datetime
 
 @asynccontextmanager
@@ -44,15 +44,28 @@ async def register_user(request: RegisterRequest):
     if embedding is None:
         raise HTTPException(status_code=400, detail="No face detected in the image")
 
-    # 4. Save to DB
+    # 4. Check for duplicates (Face already registered?)
+    # We broaden the scope here (0.60) to ensure we catch the same person 
+    # even if lighting is slightly different.
+    DUPLICATE_THRESHOLD = 0.60
+    matched_user, dist = await find_best_match_in_db(embedding, db.db.users, threshold=DUPLICATE_THRESHOLD)
+    
+    if matched_user:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Face already registered as user: {matched_user['user_id']} (Similarity: {dist:.4f})"
+        )
+
+    # 5. Save to DB
     user_doc = {
         "user_id": request.user_id,
         "face_embedding": embedding,
+        "device_info": request.device_info,
         "created_at": datetime.utcnow()
     }
     await db.db.users.insert_one(user_doc)
 
-    return StandardResponse(success=True, message="User registered successfully")
+    return StandardResponse(success=True, message=f"User registered successfully (Device: {request.device_info})")
 
 @app.post("/verify", response_model=StandardResponse)
 async def verify_user(request: LoginRequest):
@@ -67,24 +80,10 @@ async def verify_user(request: LoginRequest):
         raise HTTPException(status_code=400, detail="No face detected")
 
     # 3. Compare with DB users (1:N search)
-    # Ideally, perform vector search if using Atlas Vector Search or similar.
-    # Here we iterate (okay for small dataset).
+    # Relaxed threshold to 0.65 to make login significantly easier/broader scope
+    THRESHOLD = 0.65
     
-    best_match_user = None
-    min_distance = float("inf")
-    
-    cursor = db.db.users.find({})
-    async for user in cursor:
-        stored_embedding = user["face_embedding"]
-        dist = calculate_distance(embedding, stored_embedding)
-        
-        if dist < min_distance:
-            min_distance = dist
-            best_match_user = user
-
-    # 4. Check Threshold
-    # Using 0.55 as a balanced threshold (VGG-Face L2)
-    THRESHOLD = 0.55
+    best_match_user, min_distance = await find_best_match_in_db(embedding, db.db.users, threshold=THRESHOLD)
     
     if best_match_user and min_distance < THRESHOLD:
         return StandardResponse(
@@ -96,4 +95,5 @@ async def verify_user(request: LoginRequest):
             }
         )
     
-    return StandardResponse(success=False, message="Face not recognized")
+    msg_distance = f"{min_distance:.4f}" if min_distance != float('inf') else "N/A"
+    return StandardResponse(success=False, message=f"Face not recognized (Closest: {msg_distance})")

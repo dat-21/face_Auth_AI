@@ -60,5 +60,35 @@ def is_match(embedding1, embedding2, threshold=0.40) -> bool:
     Threshold for VGG-Face with L2 distance is typically around 0.40.
     """
     distance = calculate_distance(embedding1, embedding2)
-    print(f"Distance: {distance}, Threshold: {threshold}")
+    # print(f"Distance: {distance}, Threshold: {threshold}")
     return distance <= threshold
+
+async def find_best_match_in_db(input_embedding: list[float], db_collection, threshold: float = 0.55):
+    """
+    Search through the database to find the closest face embedding.
+    Returns: (user_doc, min_distance) or (None, infinity)
+    """
+    best_match_user = None
+    min_distance = float("inf")
+    
+    # Ideally use Vector Search here. For now, we iterate.
+    cursor = db_collection.find({})
+    count = 0
+    async for user in cursor:
+        count += 1
+        if "face_embedding" not in user:
+            continue
+            
+        stored_embedding = user["face_embedding"]
+        dist = calculate_distance(input_embedding, stored_embedding)
+        
+        if dist < min_distance:
+            min_distance = dist
+            best_match_user = user
+
+    print(f"[DEBUG] Checked {count} users in DB. Closest match distance: {min_distance} (Threshold: {threshold})")
+
+    if min_distance < threshold:
+        return best_match_user, min_distance
+    
+    return None, min_distance
